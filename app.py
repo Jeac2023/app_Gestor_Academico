@@ -1,7 +1,7 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Gestor de Trabajos Académicos", layout="wide")
 st.title("📚 Panel de Control - Ventas Académicas")
@@ -51,40 +51,31 @@ if uploaded_file:
     df['Costo'] = pd.to_numeric(df.get('Costo', 0), errors='coerce')
     df['Adelanto'] = pd.to_numeric(df.get('Adelanto', 0), errors='coerce')
 
-    # Panel Resumen
-    total_trabajos = len(df)
-    total_costo = df['Costo'].sum()
-    total_adelanto = df['Adelanto'].sum()
+    st.subheader("📌 Vista de Javier - Pendientes por Fecha")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📦 Total de Trabajos", total_trabajos)
-    col2.metric("💰 Ingresos Proyectados", f"S/. {total_costo:,.2f}")
-    col3.metric("💸 Adelantos Recibidos", f"S/. {total_adelanto:,.2f}")
+    hoy = datetime.today().date()
+    manana = hoy + timedelta(days=1)
 
-    # Gráfico por estado
-    if 'Estado' in df.columns:
-        fig_estado = px.histogram(df, x='Estado', color='Estado', title="Distribución por Estado")
-        st.plotly_chart(fig_estado, use_container_width=True)
+    javier_df = df[(df['Desarrollo'].str.lower().str.strip() == 'javier') &
+                   (df['Estado'].str.lower().str.contains("pendiente", na=False))]
 
-    # Ranking de desarrolladores
-    if 'Desarrollo' in df.columns:
-        dev_count = df['Desarrollo'].value_counts().reset_index()
-        dev_count.columns = ['Desarrollador', 'Cantidad']
-        fig_dev = px.bar(dev_count, x='Desarrollador', y='Cantidad', title="Ranking de Desarrolladores")
-        st.plotly_chart(fig_dev, use_container_width=True)
+    pendientes_hoy = javier_df[javier_df['Fecha_Entrega'].dt.date == hoy]
+    pendientes_manana = javier_df[javier_df['Fecha_Entrega'].dt.date == manana]
+    futuros = javier_df[javier_df['Fecha_Entrega'].dt.date > manana]
 
-    # Tareas pendientes
-    if 'Estado' in df.columns:
-        st.subheader("📌 Tareas Pendientes")
-        pendientes = df[df['Estado'].str.lower().str.contains("pendiente", na=False)]
-        if not pendientes.empty:
-            st.dataframe(pendientes[['Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Desarrollo', 'Grupo']].sort_values("Fecha_Entrega"))
+    tab1, tab2, tab3 = st.tabs(["Hoy", "Mañana", "Próximos Días"])
 
-    # Observaciones
-    if 'Observacion' in df.columns:
-        st.subheader("📝 Observaciones Registradas")
-        observaciones = df[df['Observacion'].notna() & (df['Observacion'].str.strip() != "")]
-        if not observaciones.empty:
-            st.dataframe(observaciones[['Fecha_Entrega', 'Tipo_Tarea', 'Observacion', 'Grupo']].sort_values("Fecha_Entrega"))
+    with tab1:
+        st.write(f"### 📅 Pendientes para hoy ({hoy})")
+        st.dataframe(pendientes_hoy[['Codigo', 'Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Costo', 'Grupo']])
+
+    with tab2:
+        st.write(f"### 📅 Pendientes para mañana ({manana})")
+        st.dataframe(pendientes_manana[['Codigo', 'Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Costo', 'Grupo']])
+
+    with tab3:
+        st.write("### 📅 Pendientes futuros")
+        st.dataframe(futuros[['Codigo', 'Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Costo', 'Grupo']])
+
 else:
     st.info("Sube un archivo Excel para comenzar.")
