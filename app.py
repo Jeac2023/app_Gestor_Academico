@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import re
 
 st.set_page_config(page_title="Gestor de Trabajos Académicos", layout="wide")
-st.title("📚 Vista de Javier - Calendario de Tareas Pendientes")
+st.title("📚 Vista de Javier - Calendario de Tareas por Grupo")
 
 # URLs de las hojas de cálculo públicas
 sheet_urls = {
@@ -14,7 +14,20 @@ sheet_urls = {
     "TURBOTAREAS": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnZa_3M1gfrT1h5Uji3FhLyhUZg6UkMVMVWdM6zA2Za_NJX-LzT1mgD4MaP_Mkhw/pub?gid=1250127946&single=true&output=csv",
 }
 
-# Cargar y combinar hojas
+# Extraer hora en formato AM/PM desde descripción
+def extraer_hora(texto):
+    if pd.isna(texto):
+        return None
+    texto = str(texto).strip().lower()
+    match = re.search(r'(\d{1,2}:\d{2}\s?(am|pm))', texto)
+    if match:
+        try:
+            return pd.to_datetime(match.group(1), format='%I:%M %p').time()
+        except:
+            return None
+    return None
+
+# Cargar datos
 dfs = []
 for grupo, url in sheet_urls.items():
     try:
@@ -29,6 +42,7 @@ for grupo, url in sheet_urls.items():
 if dfs:
     df = pd.concat(dfs, ignore_index=True)
 
+    # Renombrar columnas
     rename_map = {
         'N¬ .': 'Codigo',
         'Fecha de Pedido': 'Fecha_Pedido',
@@ -41,63 +55,58 @@ if dfs:
     }
     df.rename(columns=rename_map, inplace=True)
 
+    # Procesamiento de columnas
     df['Fecha_Pedido'] = pd.to_datetime(df['Fecha_Pedido'], errors='coerce', dayfirst=True)
     df['Fecha_Entrega'] = pd.to_datetime(df['Fecha_Entrega'], errors='coerce', dayfirst=True)
     df['Costo'] = pd.to_numeric(df.get('Costo', 0), errors='coerce')
     df['Adelanto'] = pd.to_numeric(df.get('Adelanto', 0), errors='coerce')
 
-    hoy = datetime.today().date()
-    javier_df = df[(df['Desarrollo'].str.lower().str.strip() == 'javier') &
-                   (df['Estado'].str.lower().str.contains("pendiente", na=False))]
-    javier_df = javier_df.dropna(subset=['Fecha_Entrega'])
-    javier_df['Fecha_Entrega'] = pd.to_datetime(javier_df['Fecha_Entrega']).dt.date
+    # Filtro por Javier y pendientes
+    df = df[(df['Desarrollo'].str.lower().str.strip() == 'javier') &
+            (df['Estado'].str.lower().str.contains("pendiente", na=False))]
+    df = df.dropna(subset=['Fecha_Entrega'])
+    df['Fecha_Entrega'] = pd.to_datetime(df['Fecha_Entrega']).dt.date
+    df['Hora_Entrega'] = df['Descripcion'].apply(extraer_hora)
 
-    def extraer_hora(texto):
-        if pd.isna(texto):
-            return None
-        texto = str(texto).lower()
-        match = re.search(r'(\d{1,2}[:h.]\d{2})', texto)
-        return match.group(1) if match else None
+    # Selección de fecha
+    dias = sorted(df['Fecha_Entrega'].unique())
+    dia_seleccionado = st.selectbox("Selecciona una fecha", dias, format_func=lambda d: d.strftime('%d/%m/%Y'))
 
-    javier_df['Hora_Entrega'] = javier_df['Descripcion'].apply(extraer_hora)
-    javier_df['Hora_Entrega'] = pd.to_datetime(javier_df['Hora_Entrega'], format='%H:%M', errors='coerce').dt.time
+    st.markdown(f"### 📆 Calendario para {dia_seleccionado.strftime('%d/%m/%Y')}")
+    tareas_dia = df[df['Fecha_Entrega'] == dia_seleccionado].sort_values(by='Hora_Entrega')
 
-    dias = sorted(javier_df['Fecha_Entrega'].unique())
-    dia_seleccionado = st.selectbox("Selecciona una fecha para ver tus tareas", dias, format_func=lambda d: d.strftime('%d/%m/%Y'))
+    grupos = list(sheet_urls.keys())
+    horas = sorted(tareas_dia['Hora_Entrega'].dropna().unique())
 
-    st.subheader(f"📆 Tareas para el {dia_seleccionado.strftime('%d/%m/%Y')}")
-    tareas_dia = javier_df[javier_df['Fecha_Entrega'] == dia_seleccionado]
-    tareas_dia = tareas_dia.sort_values(by='Hora_Entrega')
-
-    grupos = tareas_dia['Grupo'].unique()
     if 'completadas' not in st.session_state:
         st.session_state['completadas'] = set()
 
     mostrar_solo_pendientes = st.checkbox("Mostrar solo tareas no completadas", value=False)
 
-    for grupo in grupos:
-        st.markdown(f"### 🏷️ Grupo: {grupo}")
-        tareas_grupo = tareas_dia[tareas_dia['Grupo'] == grupo]
-
-        for idx, row in tareas_grupo.iterrows():
-            key = f"tarea_{row['Codigo']}_{row['Fecha_Entrega']}"
-            completado = key in st.session_state['completadas']
-
-            if mostrar_solo_pendientes and completado:
-                continue
-
-            col1, col2 = st.columns([0.05, 0.95])
-            with col1:
-                check = st.checkbox("", value=completado, key=key)
-                if check:
+    table_data = []
+    for hora in horas:
+        fila = [hora.strftime('%I:%M %p') if hora else ""]
+        for grupo in grupos:
+            tareas = tareas_dia[(tareas_dia['Grupo'] == grupo) & (tareas_dia['Hora_Entrega'] == hora)]
+            celdas = []
+            for idx, row in tareas.iterrows():
+                key = f"{row['Codigo']}_{row['Fecha_Entrega']}"
+                completado = key in st.session_state['completadas']
+                if mostrar_solo_pendientes and completado:
+                    continue
+                texto = f"✅ {row['Tipo_Tarea']} (S/. {row['Costo']})" if completado else f"⏳ {row['Tipo_Tarea']} (S/. {row['Costo']})"
+                checkbox = st.checkbox("", key=key, value=completado)
+                if checkbox:
                     st.session_state['completadas'].add(key)
                 else:
                     st.session_state['completadas'].discard(key)
+                celdas.append(f"{texto}<br><small>{row['Descripcion']}</small>")
+            fila.append("<br><br>".join(celdas) if celdas else "")
+        table_data.append(fila)
 
-            with col2:
-                hora = row['Hora_Entrega'].strftime('%H:%M') if pd.notna(row['Hora_Entrega']) else "(sin hora)"
-                estado = "✅ Completado" if check else "⏳ Pendiente"
-                st.markdown(f"**{hora}** — {row['Tipo_Tarea']} — `S/. {row['Costo']}` — **{estado}**")
-                st.caption(f"Código: {row['Codigo']} | {row['Descripcion']}")
+    columns = ['Hora'] + grupos
+    df_display = pd.DataFrame(table_data, columns=columns)
+    st.markdown(df_display.to_html(escape=False, index=False), unsafe_allow_html=True)
+
 else:
-    st.info("No se pudieron cargar las hojas de Google Sheets.")
+    st.warning("No se pudo cargar ningún dato desde Google Sheets.")
