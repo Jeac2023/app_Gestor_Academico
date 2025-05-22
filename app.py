@@ -17,22 +17,39 @@ if uploaded_file:
     dfs = []
     for sheet in selected_sheets:
         df = excel_file.parse(sheet)
-        df.columns = df.iloc[0]  # Fila de encabezados
+        df.columns = df.iloc[0]  # Usar primera fila como encabezado
         df = df[1:]
         df['Grupo'] = sheet
         dfs.append(df)
 
     df = pd.concat(dfs, ignore_index=True)
 
-    # Renombrar y limpiar columnas
-    df.columns = [
-        'Codigo', 'Fecha_Pedido', 'Fecha_Entrega', 'Cliente', 'Tipo_Tarea', 'Descripcion',
-        'Costo', 'Adelanto', 'Atencion', 'Desarrollo', 'Estado', 'Observacion', 'Grupo'
+    # Validar existencia de columnas esperadas
+    expected_cols = [
+        'N¬ .', 'Fecha de Pedido', 'Fecha de Entrega', 'Número',
+        'Tipo de Tarea', 'Descripcion/detalles', 'Costo', 'Adelanto',
+        'Atención', 'Desarrollo', 'Estado', 'Observación', 'Grupo'
     ]
+    df = df[[col for col in expected_cols if col in df.columns]]
+
+    # Renombrar columnas si existen
+    rename_map = {
+        'N¬ .': 'Codigo',
+        'Fecha de Pedido': 'Fecha_Pedido',
+        'Fecha de Entrega': 'Fecha_Entrega',
+        'Número': 'Cliente',
+        'Tipo de Tarea': 'Tipo_Tarea',
+        'Descripcion/detalles': 'Descripcion',
+        'Atención': 'Atencion',
+        'Observación': 'Observacion'
+    }
+    df.rename(columns=rename_map, inplace=True)
+
+    # Asegurar columnas numéricas y fechas
     df['Fecha_Pedido'] = pd.to_datetime(df['Fecha_Pedido'], errors='coerce', dayfirst=True)
     df['Fecha_Entrega'] = pd.to_datetime(df['Fecha_Entrega'], errors='coerce', dayfirst=True)
-    df['Costo'] = pd.to_numeric(df['Costo'], errors='coerce')
-    df['Adelanto'] = pd.to_numeric(df['Adelanto'], errors='coerce')
+    df['Costo'] = pd.to_numeric(df.get('Costo', 0), errors='coerce')
+    df['Adelanto'] = pd.to_numeric(df.get('Adelanto', 0), errors='coerce')
 
     # Panel Resumen
     total_trabajos = len(df)
@@ -45,23 +62,29 @@ if uploaded_file:
     col3.metric("💸 Adelantos Recibidos", f"S/. {total_adelanto:,.2f}")
 
     # Gráfico por estado
-    fig_estado = px.histogram(df, x='Estado', color='Estado', title="Distribución por Estado")
-    st.plotly_chart(fig_estado, use_container_width=True)
+    if 'Estado' in df.columns:
+        fig_estado = px.histogram(df, x='Estado', color='Estado', title="Distribución por Estado")
+        st.plotly_chart(fig_estado, use_container_width=True)
 
     # Ranking de desarrolladores
-    dev_count = df['Desarrollo'].value_counts().reset_index()
-    dev_count.columns = ['Desarrollador', 'Cantidad']
-    fig_dev = px.bar(dev_count, x='Desarrollador', y='Cantidad', title="Ranking de Desarrolladores")
-    st.plotly_chart(fig_dev, use_container_width=True)
+    if 'Desarrollo' in df.columns:
+        dev_count = df['Desarrollo'].value_counts().reset_index()
+        dev_count.columns = ['Desarrollador', 'Cantidad']
+        fig_dev = px.bar(dev_count, x='Desarrollador', y='Cantidad', title="Ranking de Desarrolladores")
+        st.plotly_chart(fig_dev, use_container_width=True)
 
     # Tareas pendientes
-    st.subheader("📌 Tareas Pendientes")
-    pendientes = df[df['Estado'].str.lower().str.contains("pendiente", na=False)]
-    st.dataframe(pendientes[['Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Desarrollo', 'Grupo']].sort_values("Fecha_Entrega"))
+    if 'Estado' in df.columns:
+        st.subheader("📌 Tareas Pendientes")
+        pendientes = df[df['Estado'].str.lower().str.contains("pendiente", na=False)]
+        if not pendientes.empty:
+            st.dataframe(pendientes[['Fecha_Entrega', 'Tipo_Tarea', 'Descripcion', 'Desarrollo', 'Grupo']].sort_values("Fecha_Entrega"))
 
     # Observaciones
-    st.subheader("📝 Observaciones Registradas")
-    observaciones = df[df['Observacion'].notna() & (df['Observacion'].str.strip() != "")]
-    st.dataframe(observaciones[['Fecha_Entrega', 'Tipo_Tarea', 'Observacion', 'Grupo']].sort_values("Fecha_Entrega"))
+    if 'Observacion' in df.columns:
+        st.subheader("📝 Observaciones Registradas")
+        observaciones = df[df['Observacion'].notna() & (df['Observacion'].str.strip() != "")]
+        if not observaciones.empty:
+            st.dataframe(observaciones[['Fecha_Entrega', 'Tipo_Tarea', 'Observacion', 'Grupo']].sort_values("Fecha_Entrega"))
 else:
     st.info("Sube un archivo Excel para comenzar.")
