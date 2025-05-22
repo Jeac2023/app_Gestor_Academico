@@ -6,21 +6,27 @@ import re
 st.set_page_config(page_title="Gestor de Trabajos Académicos", layout="wide")
 st.title("📚 Vista de Javier - Calendario de Tareas Pendientes")
 
-uploaded_file = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+# URLs de las hojas de cálculo públicas
+sheet_urls = {
+    "GENIOS EN LA EDUCACIÓN": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnZa_3M1gfrT1h5Uji3FhLyhUZg6UkMVMVWdM6zA2Za_NJX-LzT1mgD4MaP_Mkhw/pub?gid=464200169&single=true&output=csv",
+    "TU ALIADO ACADÉMICO": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnZa_3M1gfrT1h5Uji3FhLyhUZg6UkMVMVWdM6zA2Za_NJX-LzT1mgD4MaP_Mkhw/pub?gid=420707983&single=true&output=csv",
+    "ALIADOS DEL CONOCIMIENTO": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnZa_3M1gfrT1h5Uji3FhLyhUZg6UkMVMVWdM6zA2Za_NJX-LzT1mgD4MaP_Mkhw/pub?gid=435353295&single=true&output=csv",
+    "TURBOTAREAS": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSnZa_3M1gfrT1h5Uji3FhLyhUZg6UkMVMVWdM6zA2Za_NJX-LzT1mgD4MaP_Mkhw/pub?gid=1250127946&single=true&output=csv",
+}
 
-if uploaded_file:
-    excel_file = pd.ExcelFile(uploaded_file)
-    sheet_names = excel_file.sheet_names
-    selected_sheets = sheet_names
-
-    dfs = []
-    for sheet in selected_sheets:
-        df = excel_file.parse(sheet)
+# Cargar y combinar hojas
+dfs = []
+for grupo, url in sheet_urls.items():
+    try:
+        df = pd.read_csv(url)
         df.columns = df.iloc[0]
         df = df[1:]
-        df['Grupo'] = sheet
+        df['Grupo'] = grupo
         dfs.append(df)
+    except Exception as e:
+        st.warning(f"No se pudo cargar la hoja {grupo}: {e}")
 
+if dfs:
     df = pd.concat(dfs, ignore_index=True)
 
     rename_map = {
@@ -46,7 +52,6 @@ if uploaded_file:
     javier_df = javier_df.dropna(subset=['Fecha_Entrega'])
     javier_df['Fecha_Entrega'] = pd.to_datetime(javier_df['Fecha_Entrega']).dt.date
 
-    # ✅ CORRECCIÓN: función robusta para extraer la hora
     def extraer_hora(texto):
         if pd.isna(texto):
             return None
@@ -68,6 +73,8 @@ if uploaded_file:
     if 'completadas' not in st.session_state:
         st.session_state['completadas'] = set()
 
+    mostrar_solo_pendientes = st.checkbox("Mostrar solo tareas no completadas", value=False)
+
     for grupo in grupos:
         st.markdown(f"### 🏷️ Grupo: {grupo}")
         tareas_grupo = tareas_dia[tareas_dia['Grupo'] == grupo]
@@ -75,6 +82,9 @@ if uploaded_file:
         for idx, row in tareas_grupo.iterrows():
             key = f"tarea_{row['Codigo']}_{row['Fecha_Entrega']}"
             completado = key in st.session_state['completadas']
+
+            if mostrar_solo_pendientes and completado:
+                continue
 
             col1, col2 = st.columns([0.05, 0.95])
             with col1:
@@ -90,4 +100,4 @@ if uploaded_file:
                 st.markdown(f"**{hora}** — {row['Tipo_Tarea']} — `S/. {row['Costo']}` — **{estado}**")
                 st.caption(f"Código: {row['Codigo']} | {row['Descripcion']}")
 else:
-    st.info("Sube un archivo Excel para comenzar.")
+    st.info("No se pudieron cargar las hojas de Google Sheets.")
