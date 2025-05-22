@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime, timedelta
 import re
 
@@ -41,27 +40,26 @@ if uploaded_file:
     df['Costo'] = pd.to_numeric(df.get('Costo', 0), errors='coerce')
     df['Adelanto'] = pd.to_numeric(df.get('Adelanto', 0), errors='coerce')
 
-    # Filtrar por Javier y pendientes
     hoy = datetime.today().date()
     javier_df = df[(df['Desarrollo'].str.lower().str.strip() == 'javier') &
                    (df['Estado'].str.lower().str.contains("pendiente", na=False))]
     javier_df = javier_df.dropna(subset=['Fecha_Entrega'])
     javier_df['Fecha_Entrega'] = pd.to_datetime(javier_df['Fecha_Entrega']).dt.date
 
-    # Extraer hora desde descripción con regex
+    # ✅ CORRECCIÓN: función robusta para extraer la hora
     def extraer_hora(texto):
-        if pd.isna(texto): return None
-        match = re.search(r'(\\d{1,2}[:.h]\\d{2})', texto)
+        if pd.isna(texto):
+            return None
+        texto = str(texto).lower()
+        match = re.search(r'(\d{1,2}[:h.]\d{2})', texto)
         return match.group(1) if match else None
 
     javier_df['Hora_Entrega'] = javier_df['Descripcion'].apply(extraer_hora)
     javier_df['Hora_Entrega'] = pd.to_datetime(javier_df['Hora_Entrega'], format='%H:%M', errors='coerce').dt.time
 
-    # Filtro por día
     dias = sorted(javier_df['Fecha_Entrega'].unique())
     dia_seleccionado = st.selectbox("Selecciona una fecha para ver tus tareas", dias, format_func=lambda d: d.strftime('%d/%m/%Y'))
 
-    # Agrupar por grupo
     st.subheader(f"📆 Tareas para el {dia_seleccionado.strftime('%d/%m/%Y')}")
     tareas_dia = javier_df[javier_df['Fecha_Entrega'] == dia_seleccionado]
     tareas_dia = tareas_dia.sort_values(by='Hora_Entrega')
